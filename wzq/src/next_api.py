@@ -1,71 +1,176 @@
+import copy
 import json
+import numpy as np
+from tools import qp
+# å®šä¹‰æ£‹ç›˜å¤§å°
+BOARD_SIZE = 15
 
-# Îå×ÓÆåÆåÅÌ
-BOARD_SIZE = 15 
+# å®šä¹‰æ£‹å­é¢œè‰²
+BLACK = 'B'
+WHITE = 'W'
+myqp = qp()
+class Board:
+    def __init__(self):
+        # åˆå§‹åŒ–æ£‹ç›˜
+        self.board = np.full((BOARD_SIZE, BOARD_SIZE), 'E')
+        self.player = BLACK
+        self.steps = []
 
-# ¼«´ó¼«Ğ¡ÖµËã·¨
-def minimax(board, depth, player, max_player):
-    # ÅĞ¶ÏÊÇ·ñ´ïµ½ËÑË÷Éî¶È
+    def make_move(self, move):
+        # å°†è½å­æ·»åŠ åˆ°æ£‹è°±ä¸­
+        self.steps.append(move)
+        # æ›´æ–°æ£‹ç›˜çŠ¶æ€
+        x, y = move
+        self.board[x][y] = self.player
+        self.player = BLACK if self.player == WHITE else WHITE
+
+    def unmake_move(self):
+        # æ‚”æ£‹ï¼Œæ’¤é”€æœ€åä¸€æ­¥è½å­
+        if not self.steps:
+            return
+        move = self.steps.pop()
+        x, y = move
+        self.board[x][y] = 'E'
+        self.player = BLACK if self.player == WHITE else WHITE
+
+    def is_full(self):
+        # åˆ¤æ–­æ£‹ç›˜æ˜¯å¦å·²æ»¡
+        return not np.any(self.board == 'E')
+
+    def is_win(self, x, y):
+        # åˆ¤æ–­æŸä¸ªä½ç½®æ˜¯å¦å½¢æˆè¿ç»­çš„äº”å­æ£‹
+        color = self.board[x][y]
+        slice_directions = [self.board[x: x+5, y], # ç«–ç›´æ–¹å‘
+                           self.board[x, y: y+5], # æ°´å¹³æ–¹å‘
+                           np.diagonal(self.board, y-x)[max(0, y-x):min(BOARD_SIZE-x, BOARD_SIZE-y)+4], # å¯¹è§’çº¿æ–¹å‘
+                           np.diagonal(np.rot90(self.board), BOARD_SIZE-1-y+x)[max(0, BOARD_SIZE-1-y+x-4):min(x, BOARD_SIZE-y)-1:-1]] # åå¯¹è§’çº¿æ–¹å‘
+        for direction in slice_directions:
+            if direction.size < 5:
+                continue
+            counts = np.where(direction == color, 1, 0)
+            if np.sum(counts) >= 5:
+                return True
+        return False
+
+    def get_score(self, player):
+        # æ ¹æ®å½“å‰æ£‹ç›˜çŠ¶æ€è®¡ç®—ç©å®¶çš„å¾—åˆ†
+        return np.sum(self.board == player)
+
+    def get_all_moves(self, player):
+        # è·å–å½“å‰ç©å®¶å¯ä»¥ä¸‹çš„æ‰€æœ‰åˆæ³•è½å­ä½ç½®
+        mask = self.board == 'E'
+        if player == BLACK:
+            mask &= np.apply_along_axis(lambda arr: any([i == BLACK for i in arr]), 1, self.board)[:, np.newaxis]
+        else:
+            mask &= (self.board == -1)
+        return list(zip(*np.where(mask)))
+
+    def has_neighbour(self, x, y, color):
+        # åˆ¤æ–­æŒ‡å®šä½ç½®å‘¨å›´æ˜¯å¦æœ‰åŒè‰²æ£‹å­
+        if x > 0 and self.board[x-1][y] == color:
+            return True
+        if x < BOARD_SIZE-1 and self.board[x+1][y] == color:
+            return True
+        if y > 0 and self.board[x][y-1] == color:
+            return True
+        if y < BOARD_SIZE-1 and self.board[x][y+1] == color:
+            return True
+        if x > 0 and y > 0 and self.board[x-1][y-1] == color:
+            return True
+        if x < BOARD_SIZE-1 and y < BOARD_SIZE-1 and self.board[x+1][y+1] == color:
+            return True
+        if x > 0 and y < BOARD_SIZE-1 and self.board[x-1][y+1] == color:
+            return True
+        if x < BOARD_SIZE-1 and y > 0 and self.board[x+1][y-1] == color:
+            return True
+        return False
+
+def alphabeta(board, depth, alpha, beta, player, max_player):
+    # åˆ¤æ–­æ˜¯å¦è¾¾åˆ°æœç´¢æ·±åº¦
     if depth == 0:
-        # ·µ»Øµ±Ç°¾ÖÃæµÃ·Ö£¨´Ë´¦¿ÉÒÔ¸ù¾İĞèÒª½øĞĞĞŞ¸Ä£¬±ÈÈçÊ¹ÓÃÉñ¾­ÍøÂçÄ£ĞÍ½øĞĞ¹ÀÖµ£©
-        return 0
+        # è¿”å›å½“å‰å±€é¢å¾—åˆ†ï¼ˆæ­¤å¤„å¯ä»¥æ ¹æ®éœ€è¦è¿›è¡Œä¿®æ”¹ï¼Œæ¯”å¦‚ä½¿ç”¨ç¥ç»ç½‘ç»œæ¨¡å‹è¿›è¡Œä¼°å€¼ï¼‰
+        score = board.get_score(max_player)
+        return score, None
 
-    # »ñÈ¡µ±Ç°Íæ¼Ò£¨ºÚ×Ó/°××Ó£©ËùÖ´Æå×ÓÑÕÉ«
-    color = 'B' if player == 1 else 'W'
-
-    # Èç¹ûÊÇ¼«´ó²ã£¬ÎÒÃÇÒªÕÒµ½×î´ó¼ÛÖµµÄÆå²½
+    # å¦‚æœæ˜¯æå¤§å±‚ï¼Œæˆ‘ä»¬è¦æ‰¾åˆ°æœ€å¤§ä»·å€¼çš„æ£‹æ­¥
     if player == max_player:
         best_score = -float('inf')
-        for x in range(BOARD_SIZE):
-            for y in range(BOARD_SIZE):
-                if board[x][y] == 'E':
-                    # ³¢ÊÔÔÚ (x,y) ÉÏÏÂ×Ó
-                    board[x][y] = color
-                    # µİ¹é¼ÆËã×Ó½ÚµãµÄ·ÖÊı
-                    score = minimax(board, depth-1, 3-player, max_player)
-                    # »Ö¸´ÆåÅÌ×´Ì¬
-                    board[x][y] = 'E'
-                    # ¸üĞÂ×î´ó¼ÛÖµ²¢¼ÇÂ¼´ËÊ±Ó¦¸ÃÏÂ×ÓµÄÎ»ÖÃ
-                    if score > best_score:
-                        best_score = score
-                        best_move = (x, y)
-        return best_score
-    
-    # Èç¹ûÊÇ¼«Ğ¡²ã£¬ÎÒÃÇÒªÕÒµ½×îĞ¡¼ÛÖµµÄÆå²½
-    else:
-        worst_score = float('inf')
-        for x in range(BOARD_SIZE):
-            for y in range(BOARD_SIZE):
-                if board[x][y] == 'E':
-                    # ³¢ÊÔÔÚ (x,y) ÉÏÏÂ×Ó£¨¶ÔÊÖÖ´ÁíÒ»ÖÖÑÕÉ«µÄÆå×Ó£©
-                    board[x][y] = 'B' if color=='W' else 'W'
-                    # µİ¹é¼ÆËã×Ó½ÚµãµÄ·ÖÊı
-                    score = minimax(board, depth-1, 3-player, max_player)
-                    # »Ö¸´ÆåÅÌ×´Ì¬
-                    board[x][y] = 'E'
-                    # ¸üĞÂ×îĞ¡¼ÛÖµ²¢¼ÇÂ¼´ËÊ±Ó¦¸ÃÏÂ×ÓµÄÎ»ÖÃ
-                    if score < worst_score:
-                        worst_score = score
-                        best_move = (x, y)
-        return worst_score
+        best_move = None
+        for move in board.get_all_moves(max_player):
+            # å°è¯•åœ¨ (x,y) ä¸Šä¸‹å­
+            board.make_move(move)
+            # é€’å½’è®¡ç®—å­èŠ‚ç‚¹çš„åˆ†æ•°
+            score, _ = alphabeta(board, depth-1, alpha, beta, BLACK if player == WHITE else WHITE, max_player)
+            # æ¢å¤æ£‹ç›˜çŠ¶æ€
+            board.unmake_move()
+            # æ›´æ–°æœ€å¤§ä»·å€¼
+            if score > best_score:
+                best_score = score
+                best_move = move
+            # æ‰§è¡Œå‰ªææ“ä½œ
+            if best_score >= beta:
+                return best_score, best_move
+            alpha = max(alpha, best_score)
+        return best_score, best_move
 
-# ¸ù¾İ¶Ô¾ÖÊı¾İ¼ÆËãÏÂÒ»²½Âä×ÓÎ»ÖÃ
-def next_move(json_string, color, depth=3):
-    # ¶¨Òå×ÖÄ¸µ½Êı×ÖµÄÓ³Éä±í
-    x_map = {chr(i+65): i for i in range(BOARD_SIZE)}
-    y_map = {str(i+1): i for i in range(BOARD_SIZE)}
-    # ½âÎöjsonÊı¾İ
-    data = json.loads(json_string)
-    # ¹¹½¨¶şÎ¬ÆåÅÌÊı×é
-    board = [[data['board'][i+j*BOARD_SIZE] for j in range(BOARD_SIZE)] for i in range(BOARD_SIZE)]
-    # ÉèÖÃµ±Ç°Íæ¼ÒÖ´Æå×ÓÑÕÉ«
-    player = 1 if color == 'B' else 2
-    # µ÷ÓÃ¼«´ó¼«Ğ¡ÖµËã·¨»ñÈ¡ÏÂÒ»²½Âä×ÓÎ»ÖÃ
-    best_move = minimax(board, depth, player, player)
-    # ½«ÏÂÒ»²½Âä×ÓÎ»ÖÃ×ª»»Îª×ÖÄ¸Êı×Ö×ø±êµÄĞÎÊ½
-    x, y = best_move[0], best_move[1]
-    x_letter = chr(x + 65)
-    y_number = str(y + 1)
-    # ¹¹½¨·µ»Ø½á¹û£¬¼´ÏÂÒ»²½Ó¦¸ÃÏÂÔÚÄÄ¸öÎ»ÖÃ£¬²¢½«Æä×ª»»Îª×Ö·û´®¸ñÊ½
+    # å¦‚æœæ˜¯æå°å±‚ï¼Œæˆ‘ä»¬è¦æ‰¾åˆ°æœ€å°ä»·å€¼çš„æ£‹æ­¥
+    else:
+        best_score = float('inf')
+        best_move = None
+        for move in board.get_all_moves(max_player):
+            # å°è¯•åœ¨ (x,y) ä¸Šä¸‹å­ï¼ˆå¯¹æ‰‹æ‰§å¦ä¸€ç§æ£‹å­ï¼‰
+            board.make_move(move)
+            # é€’å½’è®¡ç®—å­èŠ‚ç‚¹çš„åˆ†æ•°
+            score, _ = alphabeta(board, depth-1, alpha, beta, BLACK if player == WHITE else WHITE, max_player)
+            # æ¢å¤æ£‹ç›˜çŠ¶æ€
+            board.unmake_move()
+            # æ›´æ–°æœ€å°ä»·å€¼
+            if score < best_score:
+                best_score = score
+                best_move = move
+            # æ‰§è¡Œå‰ªææ“ä½œ
+            if best_score <= alpha:
+                return best_score, best_move
+            beta = min(beta, best_score)
+        return best_score, best_move
+
+def predict(board_str, color):
+    # è§£ææ£‹ç›˜çŠ¶æ€
+    board = Board()
+    #rows = board_str.strip().split('\n')
+    rows = myqp.board_text_to_list(board_str)
+    for i in range(BOARD_SIZE):
+        for j in range(BOARD_SIZE):
+            if rows[i][j] == 'B':
+                board.board[i][j] = BLACK
+            elif rows[i][j] == 'W':
+                board.board[i][j] = WHITE
+
+    # è®¾ç½®å½“å‰ç©å®¶æ‰§æ£‹å­é¢œè‰²
+    player = BLACK if color == 'B' else WHITE
+
+    # è°ƒç”¨æå¤§æå°å€¼ç®—æ³•è·å–ä¸‹ä¸€æ­¥è½å­ä½ç½®
+    _, best_move = alphabeta(board, depth=3, alpha=-float('inf'), beta=float('inf'), player=player, max_player=player)
+
+    if player == BLACK:
+        # å°†ä¸‹ä¸€æ­¥è½å­ä½ç½®è½¬æ¢ä¸ºå­—ç¬¦ä¸²æ ¼å¼
+        x, y = best_move
+        x_letter = chr(x + 65)
+        y_number = str(y + 1)
+    else:
+        # åœ¨é¢„æµ‹ä¹‹å‰åˆ¤æ–­å“ªäº›åœ°æ–¹ä¸èƒ½ä¸‹ï¼Œå°†ä¸èƒ½ä¸‹çš„ä½ç½®è®¾ç½®ä¸º -1ï¼Œé¿å…åœ¨è®¡ç®—å¾—åˆ†æ—¶è¯¯åˆ¤
+        board.board[board.board != 'E'] = -1
+        board.board[board.board == 'E'] = 0
+
+        mask = np.apply_along_axis(lambda arr: any([i == WHITE for i in arr]), 1, board.board)[:, np.newaxis]
+        mask &= (board.board != -1)
+        best_move = np.unravel_index(np.argmax(np.where(mask, board.board, 0)), board.board.shape)
+
+        # å°†ä¸‹ä¸€æ­¥è½å­ä½ç½®è½¬æ¢ä¸ºå­—ç¬¦ä¸²æ ¼å¼
+        x, y = best_move
+        x_letter = chr(x + 65)
+        y_number = str(y + 1)
+
+    # æ„å»ºè¿”å›ç»“æœï¼Œå³ä¸‹ä¸€æ­¥åº”è¯¥ä¸‹åœ¨å“ªä¸ªä½ç½®ï¼Œå¹¶å°†å…¶è½¬æ¢ä¸ºå­—ç¬¦ä¸²æ ¼å¼
     result = {'x': x_letter, 'y': y_number}
-    return json.dumps(result)
+    return result
