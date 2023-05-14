@@ -2,6 +2,7 @@ from PIL import Image
 import numpy as np
 import cv2
 
+
 def draw_piece(board_array, x, y, color):
     """在棋盘图像上绘制棋子。
 

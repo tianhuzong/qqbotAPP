@@ -41,9 +41,9 @@ class Board:
         # 判断某个位置是否形成连续的五子棋
         color = self.board[x][y]
         slice_directions = [self.board[x: x+5, y], # 竖直方向
-                           self.board[x, y: y+5], # 水平方向
-                           np.diagonal(self.board, y-x)[max(0, y-x):min(BOARD_SIZE-x, BOARD_SIZE-y)+4], # 对角线方向
-                           np.diagonal(np.rot90(self.board), BOARD_SIZE-1-y+x)[max(0, BOARD_SIZE-1-y+x-4):min(x, BOARD_SIZE-y)-1:-1]] # 反对角线方向
+        self.board[x, y: y+5], # 水平方向
+        np.diagonal(self.board, y-x)[max(0, y-x):min(BOARD_SIZE-x, BOARD_SIZE-y)+4], # 对角线方向
+        np.diagonal(np.rot90(self.board), BOARD_SIZE-1-y+x)[max(0, BOARD_SIZE-1-y+x-4):min(x, BOARD_SIZE-y)-1:-1]] # 反对角线方向
         for direction in slice_directions:
             if direction.size < 5:
                 continue
